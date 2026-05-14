@@ -53,7 +53,7 @@ def engineer_features(df):
     category_mapping = {cat: idx for idx, cat in enumerate(df["category"].unique())}
     df["category_encoded"] = df["category"].map(category_mapping)
 
-    df["event_timestamp"] = dt.astype("int64") // 10**9
+    df["event_timestamp"] = dt.dt.tz_localize("UTC")
 
     return df
 
@@ -147,7 +147,7 @@ def main():
         "amt_log": float(sample_row["amt_log"]),
         "distance_km": float(sample_row["distance_km"]),
         "category_encoded": int(sample_row["category_encoded"]),
-        "event_timestamp": int(sample_row["event_timestamp"])
+        "event_timestamp": sample_row["event_timestamp"].isoformat()
     }
     with open(SAMPLE_REQUEST_PATH, "w") as f:
         json.dump(sample_request, f, indent=4)

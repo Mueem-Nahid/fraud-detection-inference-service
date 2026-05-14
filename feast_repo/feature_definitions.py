@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from feast import Entity, FileSource, FeatureView, Field
 from feast.data_format import ParquetFormat
 from feast.types import Int64, Float64
@@ -9,9 +11,11 @@ cc_num = Entity(
     description="Credit card number",
 )
 
+FEATURES_FILE = Path(__file__).resolve().parents[1] / "training" / "features.parquet"
+
 source = FileSource(
     name="fraud_features_source",
-    path="training/features.parquet",
+    path=str(FEATURES_FILE),
     timestamp_field="event_timestamp",
     parquet_format=ParquetFormat(),
 )

@@ -20,13 +20,14 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Place fraudTrain.csv in training/, then train and register the model.
+docker compose up -d postgres redis mlflow
 python training/train.py
-
-# Start local services.
-docker compose up -d
 
 # Materialize features after Redis is running.
 python scripts/materialize_features.py
+
+# Start the remaining services.
+docker compose up -d
 
 curl http://localhost:8000/health
 curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d @training/sample_request.json
