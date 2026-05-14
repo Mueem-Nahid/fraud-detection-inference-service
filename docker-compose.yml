@@ -61,6 +61,7 @@ services:
       start_period: 30s
 
   api:
+    image: ${API_IMAGE:-modelserve-api:local}
     build:
       context: .
       dockerfile: Dockerfile
