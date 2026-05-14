@@ -1,26 +1,41 @@
-# ============================================================================
-# ModelServe — Feast Feature Definitions
-# ============================================================================
-# TODO: Define your Feast entities, data sources, and feature views.
-#
-# You need to create:
-#
-#   1. Entity — the credit card number (cc_num) from the dataset
-#      - This is the join key for feature lookups
-#
-#   2. FileSource (or S3 source) — points to your features.parquet file
-#      - Must specify the timestamp_field for point-in-time joins
-#
-#   3. FeatureView — maps the entity to features from the data source
-#      - List every feature with its data type (Float64, Int64, String, etc.)
-#      - Set a TTL (time-to-live) for feature freshness
-#
-# The features defined here must match exactly what train.py exports
-# to features.parquet and what the FastAPI service requests from Feast.
-#
-# After defining these, run:
-#   cd feast_repo && feast apply
-#   python scripts/materialize_features.py
-#
-# Refer to Feast documentation: https://docs.feast.dev/
-# ============================================================================
+from feast import Entity, FileSource, FeatureView, Field
+from feast.data_format import ParquetFormat
+from feast.types import Int64, Float64
+from datetime import timedelta
+
+cc_num = Entity(
+    name="cc_num",
+    value_type=Int64,
+    description="Credit card number",
+)
+
+source = FileSource(
+    name="fraud_features_source",
+    path="training/features.parquet",
+    timestamp_field="event_timestamp",
+    parquet_format=ParquetFormat(),
+)
+
+fraud_features = FeatureView(
+    name="fraud_features",
+    entities=[cc_num],
+    ttl=timedelta(days=7),
+    schema=[
+        Field(name="amt", dtype=Float64),
+        Field(name="lat", dtype=Float64),
+        Field(name="long", dtype=Float64),
+        Field(name="city_pop", dtype=Int64),
+        Field(name="unix_time", dtype=Int64),
+        Field(name="merch_lat", dtype=Float64),
+        Field(name="merch_long", dtype=Float64),
+        Field(name="hour_of_day", dtype=Int64),
+        Field(name="day_of_week", dtype=Int64),
+        Field(name="is_weekend", dtype=Int64),
+        Field(name="is_night", dtype=Int64),
+        Field(name="amt_log", dtype=Float64),
+        Field(name="distance_km", dtype=Float64),
+        Field(name="category_encoded", dtype=Int64),
+    ],
+    online=True,
+    source=source,
+)
