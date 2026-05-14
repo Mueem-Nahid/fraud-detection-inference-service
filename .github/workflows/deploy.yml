@@ -1,39 +1,164 @@
-# ============================================================================
-# ModelServe — GitHub Actions CI/CD Pipeline
-# ============================================================================
-# TODO: Implement the full CI/CD pipeline.
-#
-# Required jobs:
-#
-#   1. test
-#      - Triggers on: every push and pull request
-#      - Steps: checkout, setup Python, install dependencies, run pytest
-#      - Must pass before any other job runs
-#
-#   2. build-and-push
-#      - Triggers on: push to main only (after test passes)
-#      - Steps: checkout, configure AWS credentials, login to ECR,
-#               build Docker image, tag with :latest and :$GITHUB_SHA,
-#               push to ECR
-#      - Needs: test
-#
-#   3. deploy
-#      - Triggers on: push to main only (after build-and-push passes)
-#      - Steps: connect to deployment target, pull new images,
-#               restart services, verify health endpoint returns 200
-#      - Needs: build-and-push
-#
-# Optional additional jobs:
-#   - infrastructure: run pulumi up before build-and-push
-#   - lint: run flake8 or ruff
-#   - security-scan: run Trivy on built images (bonus marks)
-#
-# Required GitHub Secrets (document these in your README):
-#   - AWS_ACCESS_KEY_ID
-#   - AWS_SECRET_ACCESS_KEY
-#   - PULUMI_ACCESS_TOKEN
-#   - SSH_PRIVATE_KEY (if deploying to EC2 via SSH)
-#   - SSH_PUBLIC_KEY (if Pulumi creates key pairs)
-#
-# Refer to the Pulumi/CI/CD lab from Episodes 2-3 for patterns.
-# ============================================================================
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'us-east-1' }}.amazonaws.com
+  IMAGE_NAME: ${{ vars.ECR_IMAGE_NAME || 'modelserve' }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run pytest
+        run: |
+          pytest app/tests/ -v --tb=short
+
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=long
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/image.tar
+          load: true
+
+      - name: Verify image exists
+        run: |
+          docker images ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          echo "Host ec2
+            HostName ${{ secrets.EC2_HOST }}
+            User ${{ secrets.EC2_USERNAME }}
+            IdentityFile ~/.ssh/ec2_key
+            StrictHostKeyChecking accept-new" > ~/.ssh/config
+
+      - name: Pull Docker image on EC2
+        run: |
+          ssh ec2 << 'EOF'
+            set -e
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+            docker pull ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker tag ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.IMAGE_NAME }}:latest
+          EOF
+
+      - name: Restart service
+        run: |
+          ssh ec2 << 'EOF'
+            set -e
+            docker compose down || true
+            docker compose up -d --remove-orphans
+            docker image prune -f
+          EOF
+
+      - name: Wait for service to be healthy
+        run: |
+          sleep 10
+          ssh ec2 << 'EOF'
+            for i in {1..30}; do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Health check passed!"
+                exit 0
+              fi
+              echo "Waiting for service... attempt $i/30"
+              sleep 2
+            done
+            echo "Health check failed!"
+            curl -v http://localhost:8000/health
+            exit 1
+          EOF
+
+      - name: Display deployment info
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Commit: ${{ github.sha }}"
