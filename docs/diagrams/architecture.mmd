@@ -1,0 +1,26 @@
+flowchart LR
+    dev[Developer] -->|git push main| gha[GitHub Actions]
+    gha -->|pytest| tests[FastAPI tests]
+    gha -->|docker build/push| ecr[(Amazon ECR)]
+    gha -->|ssh deploy| api
+    pulumi[Pulumi Python] -->|provisions| aws[AWS VPC/Subnet/SG/EC2/ECR/S3/IAM]
+
+    user[TA/User] -->|HTTP :8000| api[FastAPI API]
+    api -->|MLflow Registry :5000| mlflow[MLflow Server]
+    mlflow -->|SQL :5432| postgres[(PostgreSQL)]
+    mlflow -->|artifacts| s3[(S3 bucket)]
+    api -->|Feast SDK| feast[Feast Repo]
+    feast -->|online features :6379| redis[(Redis)]
+
+    prometheus[Prometheus :9090] -->|scrapes /metrics| api
+    grafana[Grafana :3000] -->|PromQL| prometheus
+
+    subgraph ec2sg[AWS EC2 public subnet]
+      api
+      mlflow
+      postgres
+      feast
+      redis
+      prometheus
+      grafana
+    end
