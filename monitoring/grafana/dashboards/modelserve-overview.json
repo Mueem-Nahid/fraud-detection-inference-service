@@ -588,7 +588,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(feast_feature_store_hits_total[5m])",
+          "expr": "rate(feast_online_store_hits_total[5m])",
           "legendFormat": "hit",
           "refId": "A"
         },
@@ -597,7 +597,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(feast_feature_store_misses_total[5m])",
+          "expr": "rate(feast_online_store_misses_total[5m])",
           "legendFormat": "miss",
           "refId": "B"
         }
