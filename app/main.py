@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -7,9 +8,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from feature_client import FeatureClient
-from metrics import prediction_duration_seconds, prediction_errors_total, prediction_requests_total
-from model_loader import ModelLoader
+from app.feature_client import FeatureClient, FEATURE_COLUMNS
+from app.metrics import model_version_info, prediction_duration_seconds, prediction_errors_total, prediction_requests_total
+from app.model_loader import ModelLoader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,6 +59,20 @@ def init_app(model_loader: ModelLoader, feature_client: FeatureClient) -> FastAP
     return app
 
 
+@app.on_event("startup")
+def startup() -> None:
+    global _model_loader, _feature_client
+    if _model_loader is None:
+        tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+        model_name = os.environ.get("MODEL_NAME", "fraud_detection_model")
+        _model_loader = ModelLoader(tracking_uri, model_name)
+        version = _model_loader.get_version()
+        if version:
+            model_version_info.labels(version=version).set(1)
+    if _feature_client is None:
+        _feature_client = FeatureClient()
+
+
 @app.get("/health")
 def health():
     model_loader = get_model_loader()
@@ -77,14 +92,7 @@ def predict(request: PredictRequest):
                 raise HTTPException(status_code=404, detail="Features not found for entity")
 
             model_loader = get_model_loader()
-            raw_pred = model_loader.predict(features)
-
-            if isinstance(raw_pred, (list, pd.Series)):
-                prediction = int(raw_pred[0])
-                probability = float(raw_pred[0]) if len(raw_pred) > 1 else 0.5
-            else:
-                prediction = int(raw_pred)
-                probability = float(raw_pred)
+            prediction, probability = _predict_values(model_loader, features)
 
             return PredictResponse(
                 prediction=prediction,
@@ -96,7 +104,7 @@ def predict(request: PredictRequest):
             raise
         except Exception as exc:
             prediction_errors_total.inc()
-            logger.error(f"Prediction failed: {exc}")
+            logger.error("Prediction failed: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -113,28 +121,41 @@ def predict_get(entity_id: int, explain: bool = False):
                 raise HTTPException(status_code=404, detail="Features not found for entity")
 
             model_loader = get_model_loader()
-            raw_pred = model_loader.predict(features)
+            prediction, probability = _predict_values(model_loader, features)
 
-            if isinstance(raw_pred, (list, pd.Series)):
-                prediction = int(raw_pred[0])
-                probability = float(raw_pred[0]) if len(raw_pred) > 1 else 0.5
-            else:
-                prediction = int(raw_pred)
-                probability = float(raw_pred)
+            response_features = features[FEATURE_COLUMNS].iloc[0].to_dict() if explain else {}
 
             return PredictExplainResponse(
                 prediction=prediction,
                 probability=probability,
                 model_version=model_loader.get_version() or "unknown",
                 timestamp=datetime.utcnow().isoformat(),
-                features=features.iloc[0].to_dict()
+                features=response_features
             )
         except HTTPException:
             raise
         except Exception as exc:
             prediction_errors_total.inc()
-            logger.error(f"Prediction failed: {exc}")
+            logger.error("Prediction failed: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
+
+
+def _predict_values(model_loader: ModelLoader, features: pd.DataFrame) -> tuple[int, float]:
+    model_features = features[["cc_num"] + FEATURE_COLUMNS]
+    raw_pred = model_loader.predict(model_features)
+    if isinstance(raw_pred, pd.Series):
+        value = raw_pred.iloc[0]
+    elif isinstance(raw_pred, (list, tuple)):
+        value = raw_pred[0]
+    else:
+        try:
+            value = raw_pred[0]
+        except (TypeError, IndexError):
+            value = raw_pred
+
+    prediction = int(value)
+    probability = float(value) if 0 <= float(value) <= 1 else float(prediction)
+    return prediction, probability
 
 
 @app.get("/metrics")

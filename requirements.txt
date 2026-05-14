@@ -1,16 +1,21 @@
-# ============================================================================
-# ModelServe — Python Dependencies
-# ============================================================================
-# TODO: List all Python packages your project needs.
-#
-# Think about dependencies for:
-#   - Web framework (FastAPI, uvicorn, gunicorn)
-#   - ML model (scikit-learn, and optionally xgboost or lightgbm)
-#   - Data handling (pandas, numpy)
-#   - MLflow (mlflow, boto3 for S3)
-#   - Feast (feast[redis])
-#   - Monitoring (prometheus-client)
-#   - Testing (pytest, httpx for FastAPI test client)
-#
-# Pin versions for reproducibility (e.g., fastapi>=0.104.0)
-# ============================================================================
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+gunicorn==23.0.0
+pydantic==2.10.5
+
+mlflow==2.19.0
+psycopg2-binary==2.9.10
+boto3==1.35.97
+
+feast[redis]==0.43.1
+redis==5.2.1
+
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==18.1.0
+scikit-learn==1.5.2
+
+prometheus-client==0.21.1
+
+pytest==8.3.4
+httpx==0.28.1

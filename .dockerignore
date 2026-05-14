@@ -14,10 +14,12 @@ diagrams/
 # Tests
 tests/
 testing/
+app/tests/
 
 # Training data
 *.csv
-training/
+training/*.csv
+training/*.pkl
 
 # Python
 *.pyc

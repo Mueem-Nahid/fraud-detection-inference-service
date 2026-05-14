@@ -3,6 +3,7 @@
 # ============================================================================
 
 import logging
+import os
 from typing import Any, Optional
 
 import mlflow
@@ -23,19 +24,20 @@ class ModelLoader:
     def _load_model(self) -> None:
         try:
             mlflow.set_tracking_uri(self.mlflow_tracking_uri)
-            model_uri = f"models:/{self.model_name}/Production"
+            model_stage = os.environ.get("MODEL_STAGE", "Production")
+            model_uri = f"models:/{self.model_name}/{model_stage}"
             self._model = mlflow.pyfunc.load_model(model_uri)
 
             client = mlflow.MlflowClient()
-            latest_version = client.get_latest_versions(self.model_name, stages=["Production"])
+            latest_version = client.get_latest_versions(self.model_name, stages=[model_stage])
             if latest_version:
                 self._version = str(latest_version[0].version)
             else:
                 self._version = "unknown"
 
-            logger.info(f"Successfully loaded model '{self.model_name}' version {self._version}")
+            logger.info("Successfully loaded model '%s' version %s", self.model_name, self._version)
         except Exception as e:
-            logger.error(f"Failed to load model from MLflow: {e}")
+            logger.error("Failed to load model from MLflow: %s", e)
             self._model = None
             self._version = None
 

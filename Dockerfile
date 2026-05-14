@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 
 COPY app/ ./app/
+COPY feast_repo/ ./feast_repo/
+COPY training/sample_request.json ./training/sample_request.json
 
 RUN chown -R appuser:appuser /app
 
