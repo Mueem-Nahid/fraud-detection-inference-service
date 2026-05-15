@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from feast import Entity, FileSource, FeatureView, Field
-from feast.data_format import ParquetFormat
 from feast.types import Int64, Float64
 from feast.value_type import ValueType
 from datetime import timedelta
@@ -18,7 +17,6 @@ source = FileSource(
     name="fraud_features_source",
     path=str(FEATURES_FILE),
     timestamp_field="event_timestamp",
-    parquet_format=ParquetFormat(),
 )
 
 fraud_features = FeatureView(
