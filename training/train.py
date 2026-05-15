@@ -22,12 +22,16 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
-TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
-DATA_PATH = os.path.join(os.path.dirname(__file__), "fraudTrain.csv")
-FEATURES_PARQUET_PATH = os.path.join(os.path.dirname(__file__), "features.parquet")
-SAMPLE_REQUEST_PATH = os.path.join(os.path.dirname(__file__), "sample_request.json")
+TRAIN_DIR = os.path.dirname(__file__)
+TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", f"file://{TRAIN_DIR}/mlruns")
+DATA_PATH = os.path.join(TRAIN_DIR, "fraudTrain.csv")
+FEATURES_PARQUET_PATH = os.path.join(TRAIN_DIR, "features.parquet")
+SAMPLE_REQUEST_PATH = os.path.join(TRAIN_DIR, "sample_request.json")
 MODEL_NAME = os.environ.get("MODEL_NAME", "fraud_detection_model")
 MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "production")
+
+# Ensure a writable local artifact root, overriding server-stored paths.
+os.environ.setdefault("MLFLOW_DEFAULT_ARTIFACT_ROOT", os.path.join(TRAIN_DIR, "mlartifacts"))
 
 FEATURE_COLS = [
     "cc_num", "amt", "lat", "long", "city_pop", "unix_time",
