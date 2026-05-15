@@ -146,7 +146,7 @@ instance_profile = aws.iam.InstanceProfile(
 ec2 = aws.ec2.Instance(
     f"{PREFIX}-ec2",
     ami=ami.id,
-    instance_type="t3.small",
+    instance_type="t2.micro",
     subnet_id=subnet.id,
     vpc_security_group_ids=[sg.id],
     iam_instance_profile=instance_profile.name,
